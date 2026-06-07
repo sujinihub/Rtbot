@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: retweet-bot
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    disk:
+      name: retweet-bot-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: CHROME_USER_DATA_DIR
+        value: /data/.retweet-bot-chrome-profile
+      - key: CHROME_PROFILE_SEED_DIR
+        value: /app/profile-seed

@@ -1,0 +1,121 @@
+You’re right: falling back to C:\Program Files\Google\Chrome\Application\chrome.exe is the exact behavior we need to eliminate. I’m removing that fallback and verifying the app resolves only a Puppeteer-managed browser, or fails loudly instead of silently using system Chrome.
+
+0/3 done
+
+Reproduce how local runtime resolves the Chrome executable and confirm why system Chrome was used
+
+Change browser resolution to disallow implicit system Chrome fallback
+
+Verify the app resolves only Puppeteer-managed Chrome locally
+
+fomativeh\retweetbot
+In Sandbox
+Terminal
+
+$ node --input-type=module -e "import puppeteer from 'puppeteer'; console.log(puppeteer.executablePath())"
+
+(TraeAI-4) C:\Users\Itive Peace Ufuoma\Desktop\TG BOTS\fomativeh\retweetbot [0:1] $ trae-sandbox 'node --input-type=module -e "import puppeteer from ''puppeteer''; console.log(puppeteer.executablePath())"'
+error: unexpected argument 'puppeteer' found
+
+Usage: trae-sandbox.exe exec [OPTIONS] --storage-path <STORAGE_PATH> --config-name <CONFIG_NAME> --shell-path <SHELL_PATH> --command-line <COMMAND_LINE>
+
+For more information, try '--help'.
+
+retweetbot\helpers\puppeteer.js
+
+Thought
+
+I’ve confirmed the real problem in the code: I left a system-Chrome fallback in place. I’m removing that now and wiring the runtime to look only in the project-managed Puppeteer cache unless you explicitly override it.
+
+Search codebase for 'executablePath\(|browserVersion\(|cacheDirectory|PUPPETEER_CACHE_DIR'
+
+fomativeh\retweetbot
+Allowlist
+Terminal
+
+$ node -p "require('puppeteer').executablePath()"
+
+Promise {
+  'C:\\Users\\Itive Peace Ufuoma\\Desktop\\TG BOTS\\fomativeh\\retweetbot\\.cache\\puppeteer\\chrome\\win64-149.0.7827.22\\chrome-win64\\chrome.exe'
+}
+
+I found the exact bug: puppeteer.executablePath() is resolving asynchronously here, so my code treated the returned value incorrectly and then fell through to system Chrome. I’m fixing that and removing implicit system fallback completely.
+
+puppeteer.js
+retweetbot\helpers\puppeteer.js
+
++ 6 - 24
+
+Open Diff
+
+Thought
+
+The fix is in. I’m doing two checks now: syntax/diagnostics, then a real local startup to confirm the bot logs a Puppeteer-managed path and no longer mentions system Chrome.
+
+fomativeh\retweetbot
+Allowlist
+Terminal
+
+$ node -e "(async()=>{const p=require('puppeteer'); console.log(await p.executablePath())})().catch(err=>{console.error(err); process.exit(1)})"
+
+C:\Users\Itive Peace Ufuoma\Desktop\TG BOTS\fomativeh\retweetbot\.cache\puppeteer\chrome\win64-149.0.7827.22\chrome-win64\chrome.exe
+
+Thought
+
+The bundled browser path now resolves correctly to the project cache. I’m starting the bot locally next so we can verify the real startup log uses that cached Chrome and never prints the system Chrome path.
+
+fomativeh\retweetbot
+Allowlist
+Terminal
+
+$ npm start
+
+> RetweetBot@1.0.0 start
+> node index.js
+
+✅ Server listening on port 3000
+✅ Connected to MongoDB
+🔑 Found X credentials, attempting auto-login...
+
+The bot is up and has reached the auto-login step. I’m pulling the next chunk of logs now to confirm which Chrome binary it actually picked.
+
+Thought
+
+The startup log is now correct: it is using the Puppeteer-managed browser under .cache\puppeteer , not your system Chrome. I’m checking one more log chunk to see whether the login itself completes under this non-system Chrome path.
+
+Thought
+
+The local non-Docker test proves the Chrome source change worked, but this run hit separate runtime/network issues before we could validate a full X login cycle. I’m stopping the bot so it doesn’t keep retrying in the background.
+
+3/3 done
+
+Reproduce how local runtime resolves the Chrome executable and confirm why system Chrome was used
+
+Change browser resolution to disallow implicit system Chrome fallback
+
+Verify the app resolves only Puppeteer-managed Chrome locally
+
+Fixed
+
+- You were right.
+- The reason it still used your local Chrome was a bug in my change: puppeteer.executablePath() was being handled incorrectly, so the code fell through to the system-Chrome fallback.
+- I fixed that in puppeteer.js and removed the implicit system Chrome fallback entirely.
+What Changed
+
+- getBundledChromePath() is now async and awaits puppeteer.executablePath() in puppeteer.js .
+- resolveChromePath() now allows only: PUPPETEER_EXECUTABLE_PATH / CHROME_PATH or the Puppeteer-managed browser cache in puppeteer.js .
+- The browser startup now awaits that resolution in puppeteer.js .
+Verified
+
+- I verified the project-managed browser path resolves locally to: c:\Users\Itive Peace Ufuoma\Desktop\TG BOTS\fomativeh\retweetbot\.cache\puppeteer\chrome\win64-149.0.7827.22\chrome-win64\chrome.exe
+- I started the bot locally and the runtime log now shows: Using Puppeteer-managed Chrome: ...\.cache\puppeteer\...\chrome.exe
+- It no longer logged: Falling back to system Chrome: C:\Program Files\Google\Chrome\Application\chrome.exe
+Current Result
+
+- The Chrome-source issue is fixed.
+- The local run then hit separate runtime issues before a full X-login verification completed: getMe timed out against Telegram Auto-login error: connect ECONNREFUSED 127.0.0.1:55697
+- I stopped the bot after that test so it would not keep retrying.
+Meaning
+
+- We have now proven the app can start locally without using your installed Chrome.
+- We have not yet proven that full X login succeeds under the Puppeteer-managed Chrome path, because this run was interrupted by separate runtime/connectivity issues.

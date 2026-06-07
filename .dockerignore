@@ -1,0 +1,46 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test/temp files
+comment-rt-button.html
+comment.html
+find-chrome.js
+handoff.md
+main-tweet-rt-btn.html
+maintweet.html
+render-idea.txt
+tabs.html
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# Browser/profiles
+.retweet-bot-chrome-profile/
+*.retweet-bot-chrome-profile/
+.cache/puppeteer/
+chrome-out.log
+chrome-err.log
+*.chrome-profile/
+chrome-data/
+
+# IDE
+.vscode/
+.idea/

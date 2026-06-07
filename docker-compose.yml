@@ -1,0 +1,19 @@
+services:
+  retweet-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: retweet-bot
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      CHROME_USER_DATA_DIR: /data/.retweet-bot-chrome-profile
+      CHROME_PROFILE_SEED_DIR: /app/profile-seed
+    restart: unless-stopped
+    volumes:
+      - retweet-bot-data:/data
+
+volumes:
+  retweet-bot-data:
