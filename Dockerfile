@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install Linux libraries required by Chrome for Testing + Xvfb for headful mode
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    unzip \
     xvfb \
     fonts-liberation \
     libasound2 \
@@ -46,6 +47,7 @@ RUN apt-get update && apt-get install -y \
 ENV HEADLESS=false
 ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV CHROME_USER_DATA_DIR=/data/.retweet-bot-chrome-profile
 ENV CHROME_PROFILE_SEED_DIR=/app/profile-seed
 ENV DISPLAY=:99
