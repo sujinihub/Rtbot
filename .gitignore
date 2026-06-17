@@ -52,5 +52,12 @@ tabs.html
 *.swp
 *.swo
 *~
-profile-seed/
 .cache/
+profile-seed/**/Cache/
+profile-seed/**/cache/
+profile-seed/**/Code Cache/
+profile-seed/**/GPUCache/
+profile-seed/**/GrShaderCache/
+profile-seed/**/ShaderCache/
+profile-seed/**/Crashpad/
+profile-seed/**/Singleton*

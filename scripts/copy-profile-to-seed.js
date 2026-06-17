@@ -18,12 +18,30 @@ function copyDir(src, dest) {
     fs.mkdirSync(dest, { recursive: true });
   }
 
+  const SKIP_DIR_NAMES = new Set([
+    'Cache',
+    'cache',
+    'Code Cache',
+    'GPUCache',
+    'GrShaderCache',
+    'ShaderCache',
+    'Crashpad',
+    'Crash Reports',
+    'Media Cache',
+    'DawnCache',
+    'component_crx_cache'
+  ]);
+
+  const SKIP_FILE_PREFIXES = ['Singleton'];
+  const SKIP_FILE_NAMES = new Set(['lockfile']);
+
   const entries = fs.readdirSync(src, { withFileTypes: true });
 
   for (const entry of entries) {
-    // Skip Cache directories entirely to avoid locked file errors
-    if (entry.name === 'Cache' || entry.name === 'cache') {
-      continue;
+    if (entry.isDirectory() && SKIP_DIR_NAMES.has(entry.name)) continue;
+    if (!entry.isDirectory()) {
+      if (SKIP_FILE_NAMES.has(entry.name)) continue;
+      if (SKIP_FILE_PREFIXES.some(prefix => entry.name.startsWith(prefix))) continue;
     }
     
     const srcPath = path.join(src, entry.name);

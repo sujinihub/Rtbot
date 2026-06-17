@@ -4,9 +4,44 @@ import { loginToX, addToQueue, extractXPostId, stopQueue, getQueueStatus, logout
 
 const userStates = {};
 
-async function isAdmin(userId) {
-  const admin = await Admin.findOne({ userId: userId.toString() });
-  return !!admin;
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function getAdminRecord(from) {
+  const userId = from?.id != null ? from.id.toString() : null;
+  const username = from?.username ? from.username.trim() : null;
+
+  const or = [];
+  if (userId) or.push({ userId });
+  if (username) or.push({ username: new RegExp(`^${escapeRegExp(username)}$`, 'i') });
+
+  if (or.length === 0) return null;
+  return await Admin.findOne({ $or: or });
+}
+
+async function syncAdminRecord(from, admin) {
+  if (!admin || !from) return;
+  const userId = from.id != null ? from.id.toString() : null;
+  const username = from.username ? from.username.trim() : null;
+
+  let changed = false;
+  if (userId && admin.userId !== userId) {
+    admin.userId = userId;
+    changed = true;
+  }
+  if (username && (!admin.username || admin.username.toLowerCase() !== username.toLowerCase())) {
+    admin.username = username;
+    changed = true;
+  }
+
+  if (changed) {
+    await admin.save();
+  }
+}
+
+async function isAdmin(from) {
+  return Boolean(await getAdminRecord(from));
 }
 
 async function isApprovedGroup(chatId) {
@@ -47,17 +82,42 @@ async function editOrReply(ctx, text, extra = {}) {
 }
 
 export function setupBot(bot) {
+  bot.catch((err, ctx) => {
+    const isIgnoredGroupNonTextMessage = Boolean(
+      ctx?.chat
+      && ['group', 'supergroup'].includes(ctx.chat.type)
+      && ctx.updateType === 'message'
+      && (!ctx.message || !('text' in ctx.message))
+    );
+
+    if (isIgnoredGroupNonTextMessage) {
+      return;
+    }
+
+    console.error('Unhandled error while processing', ctx?.update, err);
+  });
+
   bot.use(async (ctx, next) => {
     if (ctx.updateType === 'my_chat_member') {
       return next();
     }
     
     if (ctx.chat && ctx.chat.type === 'private') {
-      if (ctx.from && !(await isAdmin(ctx.from.id))) {
+      if (ctx.from) {
+        const admin = await getAdminRecord(ctx.from);
+        if (!admin) {
+          return;
+        }
+        await syncAdminRecord(ctx.from, admin);
+      } else {
         return;
       }
     } else if (ctx.chat && ['group', 'supergroup'].includes(ctx.chat.type)) {
       if (!(await isApprovedGroup(ctx.chat.id))) {
+        return;
+      }
+
+      if (ctx.updateType === 'message' && (!ctx.message || !('text' in ctx.message))) {
         return;
       }
     }
@@ -81,9 +141,11 @@ export function setupBot(bot) {
 
   bot.start(async (ctx) => {
     if (ctx.chat.type === 'private') {
-      if (!(await isAdmin(ctx.from.id))) {
+      const admin = await getAdminRecord(ctx.from);
+      if (!admin) {
         return;
       }
+      await syncAdminRecord(ctx.from, admin);
       await ctx.reply('Welcome to Retweet Bot!', mainMenuKeyboard());
     }
   });
@@ -201,7 +263,16 @@ export function setupBot(bot) {
   bot.action('list_admins', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const admins = await Admin.find();
-    const text = admins.length ? admins.map(a => `ID: ${a.userId}${a.username ? ` | @${a.username}` : ''}`).join('\n') : 'No admins found';
+    const text = admins.length
+      ? admins
+          .map((a) => {
+            const dmStatus = a.userId ? 'DM:✅' : 'DM:❌';
+            const idPart = a.userId ? `ID: ${a.userId}` : 'ID: (missing)';
+            const usernamePart = a.username ? ` | @${a.username}` : '';
+            return `${dmStatus} ${idPart}${usernamePart}`;
+          })
+          .join('\n')
+      : 'No admins found';
     await editOrReply(ctx, text, backMenuKeyboard());
   });
 
@@ -287,17 +358,25 @@ export function setupBot(bot) {
     const userId = ctx.from.id.toString();
     const state = userStates[userId];
 
-    if (ctx.chat.type === 'private' && !(await isAdmin(userId))) {
-      return;
+    if (ctx.chat.type === 'private') {
+      const admin = await getAdminRecord(ctx.from);
+      if (!admin) return;
+      await syncAdminRecord(ctx.from, admin);
     }
 
     if (ctx.chat.type !== 'private') {
       const xPostId = extractXPostId(text);
       if (xPostId) {
-        // Add to queue but don't auto-login
-        addToQueue(text, ctx, ctx.message.message_id);
+        addToQueue({
+          url: text,
+          telegram: bot.telegram,
+          chatId: ctx.chat.id,
+          messageId: ctx.message.message_id
+        });
         return;
       }
+
+      return;
     }
 
     if (ctx.chat.type === 'private' && state) {

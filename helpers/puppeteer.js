@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer';
 import { connect } from 'puppeteer-real-browser';
-import { BotUser } from '../models/db.js';
+import { Admin, BotUser } from '../models/db.js';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -730,7 +730,60 @@ async function loginToX(userId) {
   }
 }
 
-async function processSingleRetweet(url, ctx, messageId) {
+async function notifySeededAdmins(telegram, text) {
+  if (!telegram) return;
+
+  const admins = await Admin.find();
+  const adminsWithUserId = admins.filter(admin => admin?.userId);
+  const adminsMissingUserId = admins.filter(admin => !admin?.userId);
+
+  console.log(
+    `Admin DM broadcast: total=${admins.length}, withUserId=${adminsWithUserId.length}, missingUserId=${adminsMissingUserId.length}`
+  );
+
+  const results = await Promise.allSettled(
+    adminsWithUserId.map((admin) =>
+      telegram.sendMessage(admin.userId, text, { disable_web_page_preview: true })
+    )
+  );
+
+  const succeeded = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.length - succeeded;
+
+  if (failed > 0) {
+    const errorSummaries = results
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.status === 'rejected')
+      .slice(0, 5)
+      .map(({ r, idx }) => {
+        const admin = adminsWithUserId[idx];
+        const reason = r.reason;
+        const code = reason?.code ?? reason?.response?.error_code ?? reason?.statusCode ?? null;
+        const description = reason?.description ?? reason?.message ?? String(reason);
+        return `${admin?.userId ?? 'unknown'}:${code ?? 'unknown'}:${description}`;
+      })
+      .join(' | ');
+
+    console.warn(`Admin DM broadcast failures: failed=${failed}, sample=${errorSummaries}`);
+  }
+}
+
+async function reactThumbsUp(telegram, chatId, messageId) {
+  if (!telegram || !chatId || !messageId) return;
+
+  try {
+    await telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👍' }]
+    });
+  } catch (error) {
+    console.warn(`Failed to react to message ${messageId} in chat ${chatId}: ${error.message}`);
+  }
+}
+
+async function processSingleRetweet(task) {
+  const { url, telegram, chatId, messageId } = task;
   const p = await getPage();
   const postId = extractXPostId(url);
   
@@ -769,11 +822,7 @@ async function processSingleRetweet(url, ctx, messageId) {
     });
 
     if (result.alreadyRetweeted) {
-      try {
-        await ctx.reply('❌ Already retweeted', { reply_to_message_id: messageId });
-      } catch (e) {
-        console.log('Message not found, skipping reply');
-      }
+      await notifySeededAdmins(telegram, 'Already reposted ❌\n\n');
       return;
     }
 
@@ -795,11 +844,8 @@ async function processSingleRetweet(url, ctx, messageId) {
       });
     }
 
-    try {
-      await ctx.reply('Retweeted ✅', { reply_to_message_id: messageId });
-    } catch (e) {
-      console.log('Message not found, skipping reply');
-    }
+    await notifySeededAdmins(telegram, `Reposted ✅\n\n${url}`);
+    await reactThumbsUp(telegram, chatId, messageId);
 
   } catch (err) {
     console.error('Retweet error:', err);
@@ -814,7 +860,7 @@ async function processQueue() {
   while (retweetQueue.length > 0 && !stopRequested && isLoggedInGlobal) {
     const task = retweetQueue.shift();
     try {
-      await processSingleRetweet(task.url, task.ctx, task.messageId);
+      await processSingleRetweet(task);
       await new Promise(r => setTimeout(r, 2500 + Math.random() * 1500));
     } catch (err) {
       console.error('Queue processing error:', err);
@@ -824,9 +870,9 @@ async function processQueue() {
   isProcessingQueue = false;
 }
 
-function addToQueue(url, ctx, messageId) {
+function addToQueue(task) {
   stopRequested = false;
-  retweetQueue.push({ url, ctx, messageId });
+  retweetQueue.push(task);
   processQueue();
 }
 

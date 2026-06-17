@@ -3,6 +3,7 @@ set -eu
 
 PROFILE_DIR="${CHROME_USER_DATA_DIR:-/data/.retweet-bot-chrome-profile}"
 SEED_DIR="${CHROME_PROFILE_SEED_DIR:-/app/profile-seed}"
+FORCE_SEED="${FORCE_PROFILE_SEED:-false}"
 
 mkdir -p "$PROFILE_DIR"
 
@@ -15,7 +16,10 @@ seed_if_needed() {
     return
   fi
 
-  if [ -n "$(find "$PROFILE_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+  if [ "$FORCE_SEED" = "true" ]; then
+    echo "FORCE_PROFILE_SEED=true: resetting Chrome profile at $PROFILE_DIR"
+    rm -rf "$PROFILE_DIR"/*
+  elif [ -n "$(find "$PROFILE_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
     echo "Chrome profile already exists at $PROFILE_DIR. Skipping seed."
     return
   fi
