@@ -9,10 +9,12 @@ mkdir -p "$PROFILE_DIR"
 
 seed_if_needed() {
   if [ ! -d "$SEED_DIR" ]; then
+    echo "No Chrome profile seed directory found at $SEED_DIR"
     return
   fi
 
   if [ -z "$(find "$SEED_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+    echo "Chrome profile seed directory is empty at $SEED_DIR"
     return
   fi
 
@@ -20,7 +22,7 @@ seed_if_needed() {
     echo "FORCE_PROFILE_SEED=true: resetting Chrome profile at $PROFILE_DIR"
     rm -rf "$PROFILE_DIR"/*
   elif [ -n "$(find "$PROFILE_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-    echo "Chrome profile already exists at $PROFILE_DIR. Skipping seed."
+    echo "Chrome profile already exists at $PROFILE_DIR. Skipping seed. Set FORCE_PROFILE_SEED=true to re-seed from $SEED_DIR"
     return
   fi
 
