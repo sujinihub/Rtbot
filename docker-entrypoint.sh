@@ -32,5 +32,7 @@ seed_if_needed() {
 
 seed_if_needed
 
-Xvfb :99 -screen 0 1920x1080x24 &
+if [ "${HEADLESS:-false}" != "true" ]; then
+  Xvfb :99 -screen 0 1920x1080x24 &
+fi
 exec npm start

@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
-ENV HEADLESS=false
+ENV HEADLESS=true
 ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true

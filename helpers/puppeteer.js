@@ -653,6 +653,68 @@ function extractXPostId(url) {
   return match ? match[1] : null;
 }
 
+function getXCookieSeed() {
+  const cookiesJson = process.env.X_COOKIES_JSON;
+  if (cookiesJson) {
+    try {
+      const parsed = JSON.parse(cookiesJson);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (error) {
+      console.warn(`Invalid X_COOKIES_JSON: ${error.message}`);
+    }
+  }
+
+  const authToken = process.env.X_AUTH_TOKEN;
+  if (!authToken) return null;
+
+  const cookies = [
+    {
+      name: 'auth_token',
+      value: authToken,
+      domain: '.x.com',
+      path: '/',
+      httpOnly: true,
+      secure: true
+    }
+  ];
+
+  const ct0 = process.env.X_CT0;
+  if (ct0) {
+    cookies.push({
+      name: 'ct0',
+      value: ct0,
+      domain: '.x.com',
+      path: '/',
+      httpOnly: false,
+      secure: true
+    });
+  }
+
+  return cookies;
+}
+
+async function tryCookieLogin(targetPage) {
+  const cookies = getXCookieSeed();
+  if (!cookies || cookies.length === 0) return { attempted: false, success: false };
+
+  try {
+    console.log(`🍪 Trying cookie-based login (cookies=${cookies.length})...`);
+    await targetPage.goto('https://x.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await targetPage.setCookie(...cookies);
+    await targetPage.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await waitForPageToSettle(targetPage, 3000);
+
+    const loggedInPage = await waitForLoggedInPage(15000);
+    if (loggedInPage) {
+      return { attempted: true, success: true, page: loggedInPage };
+    }
+    return { attempted: true, success: false };
+  } catch (error) {
+    console.warn(`Cookie-based login attempt failed: ${error.message}`);
+    return { attempted: true, success: false };
+  }
+}
+
 async function loginToX(userId) {
   if (isLoggedInGlobal) {
     processQueue();
@@ -676,6 +738,18 @@ async function loginToX(userId) {
       botUser.lastLoginAt = new Date();
       await botUser.save();
       console.log('✅ Successfully detected and loaded persisted logged-in session!');
+      processQueue();
+      return true;
+    }
+
+    const cookieLogin = await tryCookieLogin(p);
+    if (cookieLogin.success) {
+      page = cookieLogin.page;
+      isLoggedInGlobal = true;
+      botUser.isLoggedIn = true;
+      botUser.lastLoginAt = new Date();
+      await botUser.save();
+      console.log('✅ Logged in via cookies!');
       processQueue();
       return true;
     }
@@ -718,10 +792,12 @@ async function loginToX(userId) {
     } else {
       // Production mode: Just check for pre-seeded profile
       console.error('❌ No logged-in session found in production!');
-      console.error('   Please update the Chrome profile seed locally first:');
-      console.error('   1. Log in manually locally (session will auto-save)');
-      console.error('   2. Then run npm run profile:copy-seed');
-      console.error('   3. Commit, push, and re-deploy');
+      if (!cookieLogin.attempted) {
+        console.error('   Tip: Seeding a Windows Chrome profile will not work on Linux (Render) because cookies are OS-encrypted.');
+        console.error('   Use one of these options instead:');
+        console.error('   - Provide X_AUTH_TOKEN (and optionally X_CT0) env vars for cookie-based login');
+        console.error('   - Generate profile-seed on Linux (e.g., via a Linux Docker container) then re-deploy');
+      }
       return false;
     }
   } catch (err) {
